@@ -25,7 +25,7 @@ async def lifespan(app: FastAPI):
     """Startup / shutdown lifecycle."""
     logger.info(f"Starting {settings.app_name} API")
     logger.info(f"Mock mode: {settings.mock_mode}")
-    logger.info(f"Whisper model: {settings.whisper_model}")
+    logger.info(f"Transcription: {'mock' if settings.mock_mode else 'AssemblyAI'}")
     init_db()
     logger.info("Database initialized.")
     yield  # ← app is running
@@ -63,5 +63,5 @@ def health_check():
         status="ok",
         version="0.1.0",
         mock_mode=settings.mock_mode,
-        whisper_model=settings.whisper_model,
+        transcription_provider="mock" if settings.mock_mode else "assemblyai",
     )

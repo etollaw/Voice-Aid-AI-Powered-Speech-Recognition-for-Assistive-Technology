@@ -54,7 +54,7 @@ class HealthResponse(BaseModel):
     status: str = "ok"
     version: str = "0.1.0"
     mock_mode: bool = False
-    whisper_model: str = "base"
+    transcription_provider: str = "assemblyai"
 
 
 class ErrorResponse(BaseModel):

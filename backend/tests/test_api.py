@@ -10,6 +10,7 @@ def test_health_check(client):
     data = resp.json()
     assert data["status"] == "ok"
     assert data["mock_mode"] is True
+    assert data["transcription_provider"] == "mock"
 
 
 def test_upload_session(client, sample_wav):

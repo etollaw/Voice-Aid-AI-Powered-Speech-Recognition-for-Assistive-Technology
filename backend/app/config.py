@@ -22,8 +22,8 @@ class Settings(BaseSettings):
     # Database
     database_url: str = ""
 
-    # Whisper
-    whisper_model: str = "base"  # tiny, base, small, medium, large
+    # Transcription
+    assemblyai_api_key: str = ""  # Get free key at https://www.assemblyai.com/
     whisper_language: str | None = None  # None = auto-detect
 
     # Summarization

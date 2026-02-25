@@ -13,12 +13,12 @@ services:
     envVars:
       - key: MOCK_MODE
         value: "false"
-      - key: WHISPER_MODEL
-        value: "base"
+      - key: ASSEMBLYAI_API_KEY
+        sync: false  # set manually in Render dashboard
       - key: DEBUG
         value: "false"
       - key: CORS_ORIGINS
-        value: "https://voiceaid.vercel.app,http://localhost:5173"
+        value: "https://voiceaid-frontend.onrender.com,http://localhost:5173"
 
   # ── Frontend (static site) ────────────────────────────────
   - type: web

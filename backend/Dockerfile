@@ -1,23 +1,19 @@
 FROM python:3.11-slim
 
-# Install ffmpeg (required by Whisper)
+# Install ffmpeg (used for audio duration detection)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Install Python dependencies (no test/lint deps in production)
+# Install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY app/ app/
-
-# Pre-download Whisper model at build time so startup is fast
-ARG WHISPER_MODEL=base
-RUN python -c "import whisper; whisper.load_model('${WHISPER_MODEL}')"
 
 # Create upload directory
 RUN mkdir -p /app/uploads

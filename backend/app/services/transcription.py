@@ -1,43 +1,24 @@
-"""Transcription service using OpenAI Whisper with mock fallback."""
+"""Transcription service using AssemblyAI with mock fallback.
+
+AssemblyAI free tier: 100 hours/month of transcription.
+Sign up at https://www.assemblyai.com/ to get an API key.
+"""
 
 import logging
 import time
 
+import requests
+
 from app.config import settings
-from app.services.audio import chunk_audio, cleanup_chunks
 
 logger = logging.getLogger(__name__)
 
-# Lazy-loaded Whisper model (loaded on first use)
-_whisper_model = None
-
-
-def _load_whisper_model():
-    """Load Whisper model (lazy, cached)."""
-    global _whisper_model
-    if _whisper_model is not None:
-        return _whisper_model
-
-    try:
-        import whisper
-
-        logger.info(f"Loading Whisper model '{settings.whisper_model}'...")
-        start = time.time()
-        _whisper_model = whisper.load_model(settings.whisper_model)
-        logger.info(f"Whisper model loaded in {time.time() - start:.1f}s")
-        return _whisper_model
-    except ImportError:
-        logger.error("openai-whisper is not installed. Install it or enable MOCK_MODE.")
-        raise RuntimeError(
-            "Whisper is not installed. Run 'pip install openai-whisper' or set MOCK_MODE=true."
-        )
-    except Exception as e:
-        logger.error(f"Failed to load Whisper model: {e}")
-        raise RuntimeError(f"Failed to load Whisper model: {e}")
+ASSEMBLYAI_UPLOAD_URL = "https://api.assemblyai.com/v2/upload"
+ASSEMBLYAI_TRANSCRIPT_URL = "https://api.assemblyai.com/v2/transcript"
 
 
 def _mock_transcribe(audio_path: str) -> dict:
-    """Return a mock transcript for development/testing without Whisper."""
+    """Return a mock transcript for development/testing."""
     return {
         "text": (
             "Welcome to the VoiceAid demo session. "
@@ -55,12 +36,68 @@ def _mock_transcribe(audio_path: str) -> dict:
     }
 
 
+def _upload_to_assemblyai(audio_path: str) -> str:
+    """Upload a local audio file to AssemblyAI and return the upload URL."""
+    headers = {"authorization": settings.assemblyai_api_key}
+
+    with open(audio_path, "rb") as f:
+        response = requests.post(ASSEMBLYAI_UPLOAD_URL, headers=headers, data=f)
+
+    if response.status_code != 200:
+        raise RuntimeError(f"AssemblyAI upload failed ({response.status_code}): {response.text}")
+
+    return response.json()["upload_url"]
+
+
+def _request_transcription(audio_url: str, language: str | None = None) -> str:
+    """Request transcription and return the transcript ID."""
+    headers = {
+        "authorization": settings.assemblyai_api_key,
+        "content-type": "application/json",
+    }
+    payload: dict = {"audio_url": audio_url}
+
+    if language:
+        payload["language_code"] = language
+    else:
+        payload["language_detection"] = True
+
+    response = requests.post(ASSEMBLYAI_TRANSCRIPT_URL, headers=headers, json=payload)
+
+    if response.status_code != 200:
+        raise RuntimeError(
+            f"AssemblyAI transcription request failed ({response.status_code}): {response.text}"
+        )
+
+    return response.json()["id"]
+
+
+def _poll_transcript(transcript_id: str, timeout_sec: int = 300) -> dict:
+    """Poll AssemblyAI until the transcript is ready."""
+    headers = {"authorization": settings.assemblyai_api_key}
+    url = f"{ASSEMBLYAI_TRANSCRIPT_URL}/{transcript_id}"
+
+    start = time.time()
+    while time.time() - start < timeout_sec:
+        response = requests.get(url, headers=headers)
+        data = response.json()
+
+        if data["status"] == "completed":
+            return data
+        elif data["status"] == "error":
+            raise RuntimeError(f"AssemblyAI transcription error: {data.get('error', 'unknown')}")
+
+        logger.info(f"Transcription status: {data['status']}... waiting 3s")
+        time.sleep(3)
+
+    raise RuntimeError(f"Transcription timed out after {timeout_sec}s")
+
+
 def transcribe_audio(audio_path: str) -> dict:
     """
-    Transcribe an audio file to text.
+    Transcribe an audio file to text using AssemblyAI.
 
-    Handles long audio via chunking (splits at 5-min intervals).
-    Falls back to mock mode if MOCK_MODE is enabled.
+    In mock mode, returns a fixed demo transcript (no API call).
 
     Args:
         audio_path: Path to the audio file.
@@ -72,41 +109,27 @@ def transcribe_audio(audio_path: str) -> dict:
         logger.info("Using mock transcription (MOCK_MODE=true)")
         return _mock_transcribe(audio_path)
 
-    model = _load_whisper_model()
+    if not settings.assemblyai_api_key:
+        raise RuntimeError(
+            "ASSEMBLYAI_API_KEY is not set. "
+            "Get a free key at https://www.assemblyai.com/ and add it to your .env file."
+        )
 
-    # Chunk long audio files
-    chunk_paths = chunk_audio(audio_path, chunk_duration_sec=300)
+    logger.info(f"Uploading audio to AssemblyAI: {audio_path}")
+    audio_url = _upload_to_assemblyai(audio_path)
 
-    transcripts = []
-    detected_language = None
+    logger.info("Requesting transcription...")
+    transcript_id = _request_transcription(audio_url, settings.whisper_language)
 
-    try:
-        for i, chunk_path in enumerate(chunk_paths):
-            logger.info(f"Transcribing chunk {i+1}/{len(chunk_paths)}: {chunk_path}")
+    logger.info(f"Polling for transcript {transcript_id}...")
+    result = _poll_transcript(transcript_id)
 
-            options = {}
-            if settings.whisper_language:
-                options["language"] = settings.whisper_language
+    detected_language = result.get("language_code", "en")
+    text = result.get("text", "") or ""
 
-            result = model.transcribe(chunk_path, **options)
-
-            transcripts.append(result["text"].strip())
-            if detected_language is None:
-                detected_language = result.get("language", "en")
-
-    except Exception as e:
-        logger.error(f"Transcription failed: {e}")
-        # If partial results exist, return them
-        if transcripts:
-            logger.warning("Returning partial transcript due to error.")
-        else:
-            raise RuntimeError(f"Transcription failed: {e}")
-    finally:
-        cleanup_chunks(chunk_paths, audio_path)
-
-    full_text = " ".join(transcripts)
+    logger.info(f"Transcription complete: {len(text)} chars, language={detected_language}")
 
     return {
-        "text": full_text,
-        "language": detected_language or "en",
+        "text": text,
+        "language": detected_language,
     }

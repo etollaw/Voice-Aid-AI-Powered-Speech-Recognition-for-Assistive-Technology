@@ -51,8 +51,8 @@ export default function Settings() {
                 <dd className="font-medium text-gray-900">{health.version}</dd>
               </div>
               <div>
-                <dt className="text-gray-500">Whisper Model</dt>
-                <dd className="font-medium text-gray-900">{health.whisper_model}</dd>
+                <dt className="text-gray-500">Transcription</dt>
+                <dd className="font-medium text-gray-900">{health.transcription_provider}</dd>
               </div>
               <div>
                 <dt className="text-gray-500">Mock Mode</dt>
