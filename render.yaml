@@ -6,8 +6,7 @@ services:
   - type: web
     name: voiceaid-api
     runtime: docker
-    dockerfilePath: backend/Dockerfile
-    dockerContext: backend
+    rootDir: backend
     plan: free          # Render free tier
     healthCheckPath: /api/health
     envVars:
@@ -24,8 +23,9 @@ services:
   - type: web
     name: voiceaid-frontend
     runtime: static
-    buildCommand: cd frontend && npm install && npm run build
-    staticPublishPath: frontend/dist
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
     plan: free
     headers:
       - path: /*
