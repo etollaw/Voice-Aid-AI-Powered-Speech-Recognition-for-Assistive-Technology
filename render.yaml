@@ -1,0 +1,40 @@
+# Render Blueprint — https://docs.render.com/infrastructure-as-code
+# Deploy: connect this repo on Render → it auto-detects render.yaml
+
+services:
+  # ── Backend API ────────────────────────────────────────────
+  - type: web
+    name: voiceaid-api
+    runtime: docker
+    dockerfilePath: backend/Dockerfile
+    dockerContext: backend
+    plan: free          # Render free tier
+    healthCheckPath: /api/health
+    envVars:
+      - key: MOCK_MODE
+        value: "false"
+      - key: WHISPER_MODEL
+        value: "base"
+      - key: DEBUG
+        value: "false"
+      - key: CORS_ORIGINS
+        value: "https://voiceaid.vercel.app,http://localhost:5173"
+
+  # ── Frontend (static site) ────────────────────────────────
+  - type: web
+    name: voiceaid-frontend
+    runtime: static
+    buildCommand: cd frontend && npm install && npm run build
+    staticPublishPath: frontend/dist
+    plan: free
+    headers:
+      - path: /*
+        name: Cache-Control
+        value: public, max-age=0, must-revalidate
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_URL
+        value: "https://voiceaid-api.onrender.com"
